@@ -52,7 +52,7 @@ setup(
     install_requires=[
         "transformers>=4.11.3",
         "timm",
-        "datasets[vision]",
+        "datasets[vision]>=2.8.0",
         "pytorch-lightning>=1.6.4",
         "nltk",
         "sentencepiece",

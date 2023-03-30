@@ -418,6 +418,9 @@ class DonutModel(PreTrainedModel):
         prompt_tensors: Optional[torch.Tensor] = None,
         return_json: bool = True,
         return_attentions: bool = False,
+        return_scores: bool = False,
+        num_return_sequences: int = 1,
+        num_beans: Optional[int] = None,
     ):
         """
         Generate a token sequence in an auto-regressive manner,
@@ -430,12 +433,32 @@ class DonutModel(PreTrainedModel):
                 convert prompt to tensor if image_tensor is not fed
             prompt_tensors: (1, sequence_length)
                 convert image to tensor if prompt_tensor is not fed
+            return_json: if set converts output token sequence to json format
+            return_attentions: if set output will have attention values
+            return_scores: if set output will have model score values
+            num_return_sequences: number (int) of returned predictions per image
+            num_beans: number of beans (Optional[int]) to use for predictions generation
         """
         # prepare backbone inputs (image and prompt)
         if image is None and image_tensors is None:
             raise ValueError("Expected either image or image_tensors")
         if all(v is None for v in {prompt, prompt_tensors}):
             raise ValueError("Expected either prompt or prompt_tensors")
+
+        if num_return_sequences < 1:
+            raise ValuesError("Expected `num_return_sequences` >= 1")
+        if num_beans is not None and num_beans < num_return_sequences:
+            raise ValuesError("Expected `num_beans >= num_return_sequences")
+
+        """
+        set proper num_beans param value to calculate score in easier way:
+        * when num_beans=1 in output we have just logits for each returned token, so to return score for whole generated text we will need to calculate it from scores per each token
+        * when num_beans>1 in output we have have output with `sequences_scores` field with score per whole generated text
+        """
+        num_beans = num_beans if num_beans is not None else 1
+        if return_scores:
+            num_beans = max(num_beans, 2)
+        num_beans = max(num_beans, num_return_sequences)
 
         if image_tensors is None:
             image_tensors = self.encoder.prepare_input(image).unsqueeze(0)
@@ -469,10 +492,12 @@ class DonutModel(PreTrainedModel):
             pad_token_id=self.decoder.tokenizer.pad_token_id,
             eos_token_id=self.decoder.tokenizer.eos_token_id,
             use_cache=True,
-            num_beams=1,
+            num_beams=num_beans,
             bad_words_ids=[[self.decoder.tokenizer.unk_token_id]],
             return_dict_in_generate=True,
             output_attentions=return_attentions,
+            output_scores=return_scores,
+            num_return_sequences=num_return_sequences,
         )
 
         output = {"predictions": list()}
@@ -489,6 +514,9 @@ class DonutModel(PreTrainedModel):
                 "self_attentions": decoder_output.decoder_attentions,
                 "cross_attentions": decoder_output.cross_attentions,
             }
+
+        if return_scores:
+            output['scores'] = np.exp(decoder_output.sequences_scores.flatten().tolist())
 
         return output
 
