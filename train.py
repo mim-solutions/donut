@@ -15,12 +15,14 @@ from pathlib import Path
 import numpy as np
 import pytorch_lightning as pl
 import torch
+import wandb
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 from pytorch_lightning.loggers.tensorboard import TensorBoardLogger
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.plugins import CheckpointIO
 from pytorch_lightning.utilities import rank_zero_only
 from sconf import Config
+
 
 from donut import DonutDataset
 from lightning_module import DonutDataPLModule, DonutModelPLModule
@@ -34,7 +36,9 @@ class CustomCheckpointIO(CheckpointIO):
     def load_checkpoint(self, path, storage_options=None):
         checkpoint = torch.load(path + "artifacts.ckpt")
         state_dict = torch.load(path + "pytorch_model.bin")
-        checkpoint["state_dict"] = {"model." + key: value for key, value in state_dict.items()}
+        checkpoint["state_dict"] = {
+            "model." + key: value for key, value in state_dict.items()
+        }
         return checkpoint
 
     def remove_checkpoint(self, path) -> None:
@@ -61,19 +65,35 @@ def train(config):
     # add datasets to data_module
     datasets = {"train": [], "validation": []}
     for i, dataset_name_or_path in enumerate(config.dataset_name_or_paths):
-        task_name = os.path.basename(dataset_name_or_path)  # e.g., cord-v2, docvqa, rvlcdip, ...
-        
+        task_name = os.path.basename(
+            dataset_name_or_path
+        )  # e.g., cord-v2, docvqa, rvlcdip, ...
+
         # add categorical special tokens (optional)
         if task_name == "rvlcdip":
-            model_module.model.decoder.add_special_tokens([
-                "<advertisement/>", "<budget/>", "<email/>", "<file_folder/>", 
-                "<form/>", "<handwritten/>", "<invoice/>", "<letter/>", 
-                "<memo/>", "<news_article/>", "<presentation/>", "<questionnaire/>", 
-                "<resume/>", "<scientific_publication/>", "<scientific_report/>", "<specification/>"
-            ])
+            model_module.model.decoder.add_special_tokens(
+                [
+                    "<advertisement/>",
+                    "<budget/>",
+                    "<email/>",
+                    "<file_folder/>",
+                    "<form/>",
+                    "<handwritten/>",
+                    "<invoice/>",
+                    "<letter/>",
+                    "<memo/>",
+                    "<news_article/>",
+                    "<presentation/>",
+                    "<questionnaire/>",
+                    "<resume/>",
+                    "<scientific_publication/>",
+                    "<scientific_report/>",
+                    "<specification/>",
+                ]
+            )
         if task_name == "docvqa":
             model_module.model.decoder.add_special_tokens(["<yes/>", "<no/>"])
-            
+
         for split in ["train", "validation"]:
             datasets[split].append(
                 DonutDataset(
@@ -84,7 +104,9 @@ def train(config):
                     task_start_token=config.task_start_tokens[i]
                     if config.get("task_start_tokens", None)
                     else f"<s_{task_name}>",
-                    prompt_end_token="<s_answer>" if "docvqa" in dataset_name_or_path else f"<s_{task_name}>",
+                    prompt_end_token="<s_answer>"
+                    if "docvqa" in dataset_name_or_path
+                    else f"<s_{task_name}>",
                     sort_json_key=config.sort_json_key,
                 )
             )
@@ -102,7 +124,7 @@ def train(config):
         default_hp_metric=False,
     )
     loggers.append(tb_logger)
-    
+
     if config.get("wandb", False):
         wb_logger = WandbLogger(
             project=config.exp_name,
@@ -112,7 +134,6 @@ def train(config):
             log_model=True,
         )
         loggers.append(wb_logger)
-        
 
     lr_callback = LearningRateMonitor(logging_interval="step")
 
@@ -157,7 +178,21 @@ if __name__ == "__main__":
     config.argv_update(left_argv)
 
     config.exp_name = basename(args.config).split(".")[0]
-    config.exp_version = datetime.datetime.now().strftime("%Y%m%d_%H%M%S") if not args.exp_version else args.exp_version
+    config.exp_version = (
+        datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        if not args.exp_version
+        else args.exp_version
+    )
+    if config.get("wandb", False):
+        run = wandb.init()
 
-    save_config_file(config, Path(config.result_path) / config.exp_name / config.exp_version)
+    save_config_file(
+        config, Path(config.result_path) / config.exp_name / config.exp_version
+    )
     train(config)
+
+    if config.get("wandb", False):
+        dataset_name = config.result_path.split("/")[-1]
+        artifact = wandb.Artifact(f"{dataset_name}", type="model_dir")
+        artifact.add_dir(config.result_path)
+        run.log_artifact(artifact)
