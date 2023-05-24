@@ -183,16 +183,15 @@ if __name__ == "__main__":
         if not args.exp_version
         else args.exp_version
     )
+    out_path = Path(config.result_path) / config.exp_name / config.exp_version
+
     if config.get("wandb", False):
         run = wandb.init()
 
-    save_config_file(
-        config, Path(config.result_path) / config.exp_name / config.exp_version
-    )
+    save_config_file(config, out_path)
     train(config)
 
     if config.get("wandb", False):
-        dataset_name = config.result_path.split("/")[-1]
-        artifact = wandb.Artifact(f"{dataset_name}", type="model_dir")
-        artifact.add_dir(config.result_path)
+        artifact = wandb.Artifact(f"model_dir_{run.id}", type="model_dir")
+        artifact.add_dir(out_path)
         run.log_artifact(artifact)
