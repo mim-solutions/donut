@@ -57,6 +57,9 @@ def save_config_file(config, path):
 
 
 def train(config):
+    out_path = Path(config.result_path) / config.exp_name / config.exp_version
+    save_config_file(config, out_path)
+
     pl.utilities.seed.seed_everything(config.get("seed", 42), workers=True)
 
     model_module = DonutModelPLModule(config)
@@ -169,7 +172,6 @@ def train(config):
     trainer.fit(model_module, data_module)
 
     if config.get("wandb", False):
-        out_path = Path(config.result_path) / config.exp_name / config.exp_version
         artifact = wandb.Artifact(f"model_dir_{run.id}", type="model_dir")
         artifact.add_dir(out_path)
         run.log_artifact(artifact)
@@ -191,6 +193,4 @@ if __name__ == "__main__":
         else args.exp_version
     )
 
-    out_path = Path(config.result_path) / config.exp_name / config.exp_version
-    save_config_file(config, out_path)
     train(config)
