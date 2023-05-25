@@ -129,7 +129,6 @@ def train(config):
     loggers.append(tb_logger)
 
     if config.get("wandb", False):
-        run = wandb.init()
         wb_logger = WandbLogger(
             project=config.exp_name,
             name=config.exp_version,
@@ -172,9 +171,9 @@ def train(config):
     trainer.fit(model_module, data_module)
 
     if config.get("wandb", False):
-        artifact = wandb.Artifact(f"model_dir_{run.id}", type="model_dir")
+        artifact = wandb.Artifact(f"model_dir_{wandb.run.id}", type="model_dir")
         artifact.add_dir(out_path)
-        run.log_artifact(artifact)
+        wandb.run.log_artifact(artifact)
 
 
 if __name__ == "__main__":
